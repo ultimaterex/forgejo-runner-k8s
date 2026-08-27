@@ -67,6 +67,8 @@ spec:
             volumeMounts:
               - name: docker-socket
                 mountPath: /var/run
+              - name: runner-data
+                mountPath: /data
         containers:
           - name: runner
             securityContext:
