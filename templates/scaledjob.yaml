@@ -76,7 +76,7 @@ spec:
                 valueFrom:
                   secretKeyRef:
                     name: {{ include "forgejo-runner-k8s.secretName" . }}
-                    key: token
+                    key: registrationToken
             resources:
               {{- toYaml .Values.runner.resources | nindent 14 }}
             volumeMounts:

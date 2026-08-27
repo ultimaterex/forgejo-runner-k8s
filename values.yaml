@@ -58,20 +58,26 @@ autoscaling:
   successfulJobsHistoryLimit: 2
   failedJobsHistoryLimit: 3
 
-# Secret configuration (for registration token & KEDA authentication)
+# Secret configuration
 secrets:
-  # If externalSecrets.enabled is true, an ExternalSecret pulls the token from an external store
+  # Static tokens if not using externalSecrets
+  registrationToken: ""
+  apiToken: ""
+  token: ""
+
+  # If externalSecrets.enabled is true, an ExternalSecret pulls tokens from an external store
   externalSecrets:
     enabled: false
     secretStoreRef:
       name: "secret-store"
       kind: "ClusterSecretStore"
+    # Remote keys in the external secret store
+    registrationTokenRemoteKey: "forgejo-runner-registration-token"
+    apiTokenRemoteKey: "forgejo-runner-api-token"
     remoteKey: "forgejo-runner-registration-token"
-    secretKey: "token"
-  # Existing secret name if managed externally
-  existingSecret: "forgejo-runner-secret"
-  # Hardcoded token if not using existingSecret or externalSecrets
-  token: ""
+
+  # Existing secret name if managed manually
+  existingSecret: ""
 
 # Node scheduling (unconstrained by default, runs on any architecture)
 # Example to pin to ARM64:

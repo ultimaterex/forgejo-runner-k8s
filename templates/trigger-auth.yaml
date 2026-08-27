@@ -9,5 +9,5 @@ spec:
   secretTargetRef:
     - parameter: token
       name: {{ include "forgejo-runner-k8s.secretName" . }}
-      key: token
+      key: apiToken
 {{- end }}
