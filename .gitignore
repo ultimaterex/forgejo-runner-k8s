@@ -1,0 +1,9 @@
+.DS_Store
+*.swp
+*~
+*.bak
+*.orig
+.idea/
+.vscode/
+*.tgz
+/charts/*.tgz

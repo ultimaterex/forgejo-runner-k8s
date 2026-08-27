@@ -1,0 +1,69 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "forgejo-runner-k8s.fullname" . }}-config
+  labels:
+    {{- include "forgejo-runner-k8s.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    log:
+      level: info
+      job_level: info
+    runner:
+      file: .runner
+      capacity: {{ .Values.runner.capacity }}
+      timeout: {{ .Values.runner.timeout }}
+      insecure: {{ .Values.runner.insecure }}
+      fetch_timeout: 30s
+      fetch_interval: 2s
+      report_interval: 1s
+      labels:
+        {{- range .Values.runner.labels }}
+        - {{ . | quote }}
+        {{- end }}
+    cache:
+      enabled: true
+      dir: ""
+      host: ""
+    container:
+      network: ""
+      privileged: false
+      workdir_parent:
+      valid_volumes: []
+      docker_host: "-"
+      force_pull: false
+    host:
+      workdir_parent:
+  entrypoint.sh: |
+    #!/bin/sh
+    set -e
+
+    echo "[forgejo-runner-init] Checking Docker daemon socket at /var/run/docker.sock..."
+    COUNT=0
+    while [ ! -S /var/run/docker.sock ]; do
+      COUNT=$((COUNT + 1))
+      if [ $COUNT -gt 60 ]; then
+        echo "[forgejo-runner-init] Timed out waiting for Docker socket."
+        exit 1
+      fi
+      sleep 1
+    done
+    echo "[forgejo-runner-init] Docker socket is ready."
+
+    cp /etc/forgejo-runner/config.yaml /data/config.yaml
+
+    RUNNER_NAME="{{ .Values.runner.namePrefix }}-${HOSTNAME}"
+    LABELS_ARG="{{ join "," .Values.runner.labels }}"
+
+    echo "[forgejo-runner-init] Registering ephemeral runner $RUNNER_NAME with {{ .Values.forgejo.url }}..."
+    forgejo-runner register \
+      --no-interactive \
+      --instance "{{ .Values.forgejo.url }}" \
+      --token "$FORGEJO_RUNNER_REGISTRATION_TOKEN" \
+      --name "$RUNNER_NAME" \
+      --labels "$LABELS_ARG" \
+      --ephemeral \
+      --config /data/config.yaml
+
+    echo "[forgejo-runner-init] Ephemeral registration complete. Starting runner daemon..."
+    exec forgejo-runner daemon --config /data/config.yaml

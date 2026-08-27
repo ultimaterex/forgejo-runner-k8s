@@ -1,0 +1,85 @@
+{{- if or (not .Values.autoscaling.enabled) (eq .Values.autoscaling.mode "ScaledObject") }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "forgejo-runner-k8s.fullname" . }}
+  labels:
+    {{- include "forgejo-runner-k8s.labels" . | nindent 4 }}
+spec:
+  replicas: {{ if .Values.autoscaling.enabled }}0{{ else }}{{ .Values.autoscaling.minReplicas | default 1 }}{{ end }}
+  selector:
+    matchLabels:
+      {{- include "forgejo-runner-k8s.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "forgejo-runner-k8s.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      volumes:
+        - name: docker-socket
+          emptyDir: {}
+        - name: runner-data
+          emptyDir: {}
+        - name: runner-config
+          configMap:
+            name: {{ include "forgejo-runner-k8s.fullname" . }}-config
+            defaultMode: 0755
+      initContainers:
+        - name: dind
+          image: "{{ .Values.dind.image.repository }}:{{ .Values.dind.image.tag }}"
+          imagePullPolicy: {{ .Values.dind.image.pullPolicy }}
+          restartPolicy: Always
+          securityContext:
+            privileged: {{ .Values.dind.privileged }}
+          command:
+            - dockerd
+            - --host=unix:///var/run/docker.sock
+            {{- if .Values.dind.registryMirror }}
+            - --registry-mirror={{ .Values.dind.registryMirror }}
+            {{- end }}
+          startupProbe:
+            exec:
+              command: ["/usr/bin/test", "-S", "/var/run/docker.sock"]
+            initialDelaySeconds: 2
+            periodSeconds: 2
+            failureThreshold: 30
+          resources:
+            {{- toYaml .Values.dind.resources | nindent 12 }}
+          volumeMounts:
+            - name: docker-socket
+              mountPath: /var/run
+      containers:
+        - name: runner
+          image: "{{ .Values.runner.image.repository }}:{{ .Values.runner.image.tag }}"
+          imagePullPolicy: {{ .Values.runner.image.pullPolicy }}
+          command: ["/etc/forgejo-runner/entrypoint.sh"]
+          env:
+            - name: DOCKER_HOST
+              value: "unix:///var/run/docker.sock"
+            - name: FORGEJO_RUNNER_REGISTRATION_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "forgejo-runner-k8s.secretName" . }}
+                  key: token
+          resources:
+            {{- toYaml .Values.runner.resources | nindent 12 }}
+          volumeMounts:
+            - name: docker-socket
+              mountPath: /var/run
+            - name: runner-data
+              mountPath: /data
+            - name: runner-config
+              mountPath: /etc/forgejo-runner
+{{- end }}

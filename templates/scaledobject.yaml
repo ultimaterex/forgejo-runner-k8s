@@ -1,0 +1,25 @@
+{{- if and .Values.autoscaling.enabled (eq .Values.autoscaling.mode "ScaledObject") }}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "forgejo-runner-k8s.fullname" . }}
+  labels:
+    {{- include "forgejo-runner-k8s.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "forgejo-runner-k8s.fullname" . }}
+  minReplicaCount: {{ .Values.autoscaling.minReplicas | default 0 }}
+  maxReplicaCount: {{ .Values.autoscaling.maxReplicas | default 4 }}
+  pollingInterval: {{ .Values.autoscaling.pollingInterval | default 10 }}
+  cooldownPeriod: {{ .Values.autoscaling.cooldownPeriod | default 300 }}
+  triggers:
+    - type: forgejo-runner
+      metadata:
+        address: {{ .Values.forgejo.url | quote }}
+        labels: {{ .Values.autoscaling.triggerLabels | default "arm64" | quote }}
+        global: {{ eq .Values.forgejo.scope "global" | quote }}
+      authenticationRef:
+        name: {{ include "forgejo-runner-k8s.fullname" . }}-trigger-auth
+{{- end }}

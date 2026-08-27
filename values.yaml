@@ -1,0 +1,92 @@
+# Default values for forgejo-runner-k8s.
+
+forgejo:
+  # Forgejo instance base URL (e.g. https://forgejo.example.com)
+  url: "https://forgejo.example.com"
+  # Scope for runner jobs: global, owner, org, or repo
+  scope: "global"
+
+runner:
+  image:
+    repository: "code.forgejo.org/forgejo/runner"
+    tag: "12"
+    pullPolicy: "IfNotPresent"
+  namePrefix: "k8s-runner"
+  # Labels that this runner registers with Forgejo Actions
+  labels:
+    - "arm64:docker://node:20-bookworm"
+    - "linux-arm64:docker://node:20-bookworm"
+    - "self-hosted-arm64:docker://node:20-bookworm"
+  capacity: 1
+  timeout: "3h"
+  insecure: false
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "256Mi"
+    limits:
+      cpu: "2"
+      memory: "2Gi"
+
+dind:
+  image:
+    repository: "docker"
+    tag: "28-dind"
+    pullPolicy: "IfNotPresent"
+  privileged: true
+  # Optional in-cluster pull-through registry cache mirror
+  registryMirror: ""
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "512Mi"
+    limits:
+      cpu: "3"
+      memory: "4Gi"
+
+autoscaling:
+  enabled: true
+  # "ScaledJob" (ephemeral one-shot jobs) or "ScaledObject" (scaling a Deployment)
+  mode: "ScaledJob"
+  minReplicas: 0
+  maxReplicas: 4
+  pollingInterval: 10
+  cooldownPeriod: 300
+  triggerLabels: "arm64"
+  # Clean up completed jobs after 60 seconds
+  ttlSecondsAfterFinished: 60
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+
+# Secret configuration (for registration token & KEDA authentication)
+secrets:
+  # If externalSecrets.enabled is true, an ExternalSecret pulls the token from an external store
+  externalSecrets:
+    enabled: false
+    secretStoreRef:
+      name: "secret-store"
+      kind: "ClusterSecretStore"
+    remoteKey: "forgejo-runner-registration-token"
+    secretKey: "token"
+  # Existing secret name if managed externally
+  existingSecret: "forgejo-runner-secret"
+  # Hardcoded token if not using existingSecret or externalSecrets
+  token: ""
+
+# Node scheduling & anti-affinity
+nodeSelector:
+  kubernetes.io/arch: "arm64"
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: "app.kubernetes.io/name"
+                operator: "In"
+                values: ["forgejo-runner-k8s"]
+          topologyKey: "kubernetes.io/hostname"
+
+tolerations: []

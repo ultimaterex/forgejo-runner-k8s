@@ -1,0 +1,13 @@
+{{- if .Values.autoscaling.enabled }}
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: {{ include "forgejo-runner-k8s.fullname" . }}-trigger-auth
+  labels:
+    {{- include "forgejo-runner-k8s.labels" . | nindent 4 }}
+spec:
+  secretTargetRef:
+    - parameter: token
+      name: {{ include "forgejo-runner-k8s.secretName" . }}
+      key: token
+{{- end }}

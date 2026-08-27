@@ -1,0 +1,101 @@
+{{- if and .Values.autoscaling.enabled (eq .Values.autoscaling.mode "ScaledJob") }}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledJob
+metadata:
+  name: {{ include "forgejo-runner-k8s.fullname" . }}
+  labels:
+    {{- include "forgejo-runner-k8s.labels" . | nindent 4 }}
+spec:
+  jobTargetRef:
+    parallelism: 1
+    completions: 1
+    activeDeadlineSeconds: 10800
+    backoffLimit: 1
+    ttlSecondsAfterFinished: {{ .Values.autoscaling.ttlSecondsAfterFinished | default 60 }}
+    template:
+      metadata:
+        labels:
+          {{- include "forgejo-runner-k8s.selectorLabels" . | nindent 10 }}
+      spec:
+        restartPolicy: Never
+        {{- with .Values.nodeSelector }}
+        nodeSelector:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        {{- with .Values.affinity }}
+        affinity:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        {{- with .Values.tolerations }}
+        tolerations:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        volumes:
+          - name: docker-socket
+            emptyDir: {}
+          - name: runner-data
+            emptyDir: {}
+          - name: runner-config
+            configMap:
+              name: {{ include "forgejo-runner-k8s.fullname" . }}-config
+              defaultMode: 0755
+        initContainers:
+          # Native sidecar Docker daemon (Kubernetes 1.28+)
+          - name: dind
+            image: "{{ .Values.dind.image.repository }}:{{ .Values.dind.image.tag }}"
+            imagePullPolicy: {{ .Values.dind.image.pullPolicy }}
+            restartPolicy: Always
+            securityContext:
+              privileged: {{ .Values.dind.privileged }}
+            command:
+              - dockerd
+              - --host=unix:///var/run/docker.sock
+              {{- if .Values.dind.registryMirror }}
+              - --registry-mirror={{ .Values.dind.registryMirror }}
+              {{- end }}
+            startupProbe:
+              exec:
+                command: ["/usr/bin/test", "-S", "/var/run/docker.sock"]
+              initialDelaySeconds: 2
+              periodSeconds: 2
+              failureThreshold: 30
+            resources:
+              {{- toYaml .Values.dind.resources | nindent 14 }}
+            volumeMounts:
+              - name: docker-socket
+                mountPath: /var/run
+        containers:
+          - name: runner
+            image: "{{ .Values.runner.image.repository }}:{{ .Values.runner.image.tag }}"
+            imagePullPolicy: {{ .Values.runner.image.pullPolicy }}
+            command: ["/etc/forgejo-runner/entrypoint.sh"]
+            env:
+              - name: DOCKER_HOST
+                value: "unix:///var/run/docker.sock"
+              - name: FORGEJO_RUNNER_REGISTRATION_TOKEN
+                valueFrom:
+                  secretKeyRef:
+                    name: {{ include "forgejo-runner-k8s.secretName" . }}
+                    key: token
+            resources:
+              {{- toYaml .Values.runner.resources | nindent 14 }}
+            volumeMounts:
+              - name: docker-socket
+                mountPath: /var/run
+              - name: runner-data
+                mountPath: /data
+              - name: runner-config
+                mountPath: /etc/forgejo-runner
+  pollingInterval: {{ .Values.autoscaling.pollingInterval | default 10 }}
+  successfulJobsHistoryLimit: {{ .Values.autoscaling.successfulJobsHistoryLimit | default 2 }}
+  failedJobsHistoryLimit: {{ .Values.autoscaling.failedJobsHistoryLimit | default 3 }}
+  maxReplicaCount: {{ .Values.autoscaling.maxReplicas | default 4 }}
+  triggers:
+    - type: forgejo-runner
+      metadata:
+        address: {{ .Values.forgejo.url | quote }}
+        labels: {{ .Values.autoscaling.triggerLabels | default "arm64" | quote }}
+        global: {{ eq .Values.forgejo.scope "global" | quote }}
+      authenticationRef:
+        name: {{ include "forgejo-runner-k8s.fullname" . }}-trigger-auth
+{{- end }}
