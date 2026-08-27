@@ -65,5 +65,5 @@ data:
       --ephemeral \
       --config /data/config.yaml
 
-    echo "[forgejo-runner-init] Ephemeral registration complete. Starting runner daemon..."
-    exec forgejo-runner daemon --config /data/config.yaml
+    echo "[forgejo-runner-init] Ephemeral registration complete. Starting one-shot runner..."
+    exec forgejo-runner one-job --config /data/config.yaml
