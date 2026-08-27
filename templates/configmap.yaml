@@ -27,10 +27,11 @@ data:
       host: ""
     container:
       network: ""
-      privileged: false
+      privileged: true
       workdir_parent:
-      valid_volumes: []
-      docker_host: "-"
+      valid_volumes:
+        - '**'
+      docker_host: "unix:///var/run/docker.sock"
       force_pull: false
     host:
       workdir_parent:
