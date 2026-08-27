@@ -1,88 +1,76 @@
-# forgejo-runner-k8s
+# Forgejo Runner on Kubernetes (with KEDA Autoscaling)
 
-An event-driven, autoscaling Forgejo Actions runner for Kubernetes. Designed specifically for self-hosted ARM64/AMD64 clusters using **KEDA** (Kubernetes Event-driven Autoscaling) and **Docker-in-Docker (DinD)** native sidecars.
+Most CI setups on Kubernetes suffer from one of two headaches: either you leave heavy Docker-in-Docker pods running 24/7 chewing up idle RAM, or rolling restarts leave a graveyard of orphaned "offline" runners in Forgejo's admin panel.
+
+This Helm chart solves both. It provides ephemeral Forgejo Actions runners that **scale to zero when idle** using KEDA, spin up on demand with a native Docker-in-Docker sidecar, run your workflow, and cleanly unregister the second the job completes.
 
 ```mermaid
 flowchart TD
-    subgraph Forgejo Server ["Forgejo Server (forgejo.example.com)"]
-        Queue["Actions Job Queue (runs-on: arm64)"]
+    subgraph Forgejo ["Forgejo Server"]
+        Queue["Actions Job Queue<br/>(runs-on: arm64)"]
     end
 
-    subgraph KEDA ["KEDA Controller"]
+    subgraph KEDA ["KEDA Autoscaler"]
         Scaler["forgejo-runner Trigger"]
     end
 
-    subgraph K8s ["Kubernetes Cluster"]
-        Job["ScaledJob Pod (0 -> N Max)"]
-        DinD["Sidecar: docker:dind"]
-        Runner["Container: forgejo-runner"]
-        Cache["Registry Cache Mirror (Optional)"]
+    subgraph Cluster ["Kubernetes Cluster"]
+        Job["ScaledJob Pod<br/>(0 to N replicas)"]
+        DinD["Sidecar Container<br/>docker:dind"]
+        Runner["Main Container<br/>forgejo-runner"]
+        Cache["Registry Cache Mirror<br/>(Optional)"]
     end
 
-    Queue -. Polled every 10s .-> Scaler
-    Scaler -- "Scale up (1-N jobs)" --> Job
+    Queue -. "Polled every 10s" .-> Scaler
+    Scaler -- "Queue > 0: Spawn Pod" --> Job
     Job --> DinD
     Job --> Runner
-    DinD -. Pull layers .-> Cache
-    Runner -- "Registers (ephemeral)" --> Forgejo Server
-    Runner -- "Executes job" --> DinD
-    Runner -- "Deregisters & Exits" --> Job
+    DinD -. "Pulls base images" .-> Cache
+    Runner -- "Registers (ephemeral)" --> Forgejo
+    Runner -- "Executes build" --> DinD
+    Runner -- "Exits on completion" --> Job
 ```
 
 ---
 
-## Features
+## Why this chart?
 
-- **True Event-Driven Autoscaling (0 to N)**: Consumes **0 CPU and 0 RAM** when idle. Pods are only spawned when jobs targeting specific labels (e.g., `arm64`) enter the Forgejo queue.
-- **Auto-Deregistration (No Zombie Runners)**: Runners register dynamically with `--ephemeral`. When a job finishes, Forgejo automatically deregisters the runner, and Kubernetes terminates the Job pod.
-- **Native K8s Sidecar DinD**: Leverages Kubernetes 1.28+ native sidecar containers (`restartPolicy: Always`) ensuring Docker is healthy before the runner starts, and terminates cleanly when the runner exits.
-- **Pull-Through Registry Cache Support**: Connects directly to local registry mirrors (e.g., in-cluster registry cache) to accelerate container pulls and avoid Docker Hub rate limits.
-- **Cluster Node Distribution**: Pod anti-affinity automatically spreads concurrent jobs across physical cluster nodes.
-- **External Secrets Operator (ESO)**: Native support for syncing the runner registration token directly from external secret managers (Vault, Bitwarden, AWS Secrets Manager, etc.).
+- **Scale to Zero**: If nobody pushed code, **0 runner pods exist**. No idle CPU, no memory wasted on worker nodes.
+- **No Zombie Runners**: Runners register dynamically using `--ephemeral`. The moment a job finishes, Forgejo deletes the runner registration from its database and Kubernetes cleans up the Job pod.
+- **Native K8s 1.28+ Sidecar Lifecycle**: Docker-in-Docker runs as a native sidecar (`restartPolicy: Always`). Kubernetes ensures the Docker socket is ready before the runner container starts, and automatically kills DinD when the runner exits.
+- **Multi-Arch & Homelab Friendly**: Ideal for ARM64 nodes (Raspberry Pi, Turing Pi, Orange Pi, Apple Silicon) alongside x86 machines. You can run native `linux/arm64` builds without slow QEMU emulation.
+- **Local Registry Cache**: Configurable `--registry-mirror` support so worker containers pull base images from an in-cluster pull-through cache, saving bandwidth and SD/SSD wear.
+- **Spread Across Nodes**: Pod anti-affinity prevents all concurrent runners from piling onto a single node.
 
 ---
 
 ## Prerequisites
 
 1. **Kubernetes 1.28+** (with privileged container support for DinD).
-2. **KEDA v2.18+** installed in the cluster (`kedacore/keda` Helm chart).
-3. A Forgejo instance (v15.0+ recommended) with Actions enabled.
-4. An Actions Runner Registration Token from Forgejo:
-   - Global: `https://your-forgejo/admin/actions/runners`
+2. **KEDA v2.18+** installed in your cluster (`helm repo add kedacore https://kedacore.github.io/charts`).
+3. A Forgejo instance (v15.0+) with Actions enabled.
+4. A runner registration token or API token from your Forgejo instance:
+   - Web UI: **Site Administration > Actions > Runners > Create new Runner**
    - Or API: `GET /api/v1/admin/actions/runners/registration-token`
-
----
-
-## Architecture Modes
-
-### 1. `ScaledJob` Mode (Default & Recommended)
-Spawns a dedicated, single-use Kubernetes `Job` for each queued workflow.
-- Complete isolation between jobs.
-- Clean shutdown and automatic pod cleanup (`ttlSecondsAfterFinished: 60`).
-- No risk of rolling updates killing an in-flight build.
-
-### 2. `ScaledObject` Mode
-Scales a standard Kubernetes `Deployment` from 0 to N replicas based on queue depth.
-- Replicas stay alive during `cooldownPeriod` (default 300s) to handle rapid back-to-back commits.
 
 ---
 
 ## Quickstart
 
-### 1. Configure Secret (Manual or ExternalSecrets)
+### 1. Add your Registration Secret
 
-#### Via Manual Kubernetes Secret:
+#### Option A: Plain Kubernetes Secret
 ```bash
 kubectl create namespace forgejo-runner
 kubectl create secret generic forgejo-runner-secret \
   -n forgejo-runner \
-  --from-literal=token="YOUR_REGISTRATION_TOKEN"
+  --from-literal=token="YOUR_FORGEJO_REGISTRATION_TOKEN"
 ```
 
-#### Via External Secrets Operator:
-Set `secrets.externalSecrets.enabled=true` and specify your `secretStoreRef` and `remoteKey`.
+#### Option B: External Secrets Operator (Vault, Bitwarden, AWS Secrets Manager)
+Set `secrets.externalSecrets.enabled: true` in your values and specify your `secretStoreRef` and `remoteKey`.
 
-### 2. Install Chart via Helm
+### 2. Install the Chart
 
 ```bash
 helm upgrade --install forgejo-runner ./ \
@@ -94,29 +82,28 @@ helm upgrade --install forgejo-runner ./ \
 
 ---
 
-## Workflow Configuration
+## Scaling Modes: `ScaledJob` vs `ScaledObject`
 
-In your repository `.forgejo/workflows/` (e.g. `docker.yml`), target the runner using the configured labels:
+You can switch between two scaling modes via `autoscaling.mode`:
 
-### Native ARM64 Build Example
+1. **`ScaledJob` (Default & Recommended)**:
+   KEDA spawns an isolated, single-use Kubernetes `Job` for every waiting task in Forgejo.
+   - Complete isolation between builds.
+   - Clean ephemeral registration and immediate deregistration.
+   - Automatic pod cleanup (`ttlSecondsAfterFinished: 60`).
+
+2. **`ScaledObject`**:
+   KEDA scales a traditional Kubernetes `Deployment` from 0 to N replicas based on queue depth.
+   - Pods stay alive during `cooldownPeriod` (default: 300s) to handle rapid bursts of commits without cold booting.
+
+---
+
+## Workflow Example: Native ARM64 & Multi-Arch
+
+In your repository `.forgejo/workflows/docker.yml`, target the runner using labels:
+
 ```yaml
-name: Native ARM64 Build
-on: [push]
-
-jobs:
-  build:
-    runs-on: arm64
-    steps:
-      - uses: actions/checkout@v4
-      - name: Verify Architecture
-        run: |
-          echo "Building natively on $(uname -m)"
-          docker version
-```
-
-### Dual-Architecture Matrix (x86 + Native ARM64)
-```yaml
-name: Multi-Arch Build Matrix
+name: Build & Push
 on: [push]
 
 jobs:
@@ -125,13 +112,13 @@ jobs:
       matrix:
         include:
           - arch: amd64
-            runs-on: docker # Runs on your x86 Docker runner
+            runs-on: docker # Runs on your existing x86 runner
           - arch: arm64
             runs-on: arm64  # Autoscales onto your K8s ARM64 nodes!
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
-      - name: Build Slice
+      - name: Build native slice
         run: |
           docker build --platform linux/${{ matrix.arch }} -t myapp:${{ matrix.arch }} .
 ```
@@ -146,11 +133,12 @@ jobs:
 | `forgejo.scope` | Scope of runner (`global`, `owner`, `org`, `repo`) | `global` |
 | `runner.image.repository` | Forgejo runner image | `code.forgejo.org/forgejo/runner` |
 | `runner.image.tag` | Image tag | `12` |
+| `runner.namePrefix` | Runner name prefix registered in Forgejo | `k8s-runner` |
 | `runner.labels` | Runner labels registered in Forgejo | `["arm64:...", "linux-arm64:..."]` |
 | `runner.capacity` | Max concurrent jobs per runner pod | `1` |
 | `dind.image.tag` | Docker-in-Docker image tag | `28-dind` |
 | `dind.privileged` | Enable privileged mode for DinD | `true` |
-| `dind.registryMirror` | Local pull-through cache mirror | `""` |
+| `dind.registryMirror` | Optional pull-through registry cache mirror | `""` |
 | `autoscaling.mode` | Scaling mode (`ScaledJob` or `ScaledObject`) | `ScaledJob` |
 | `autoscaling.minReplicas` | Minimum replica count | `0` |
 | `autoscaling.maxReplicas` | Maximum concurrent runners | `4` |
