@@ -1,4 +1,5 @@
 # Default values for forgejo-runner-k8s.
+# Works across AMD64, ARM64, or mixed-architecture clusters.
 
 forgejo:
   # Forgejo instance base URL (e.g. https://forgejo.example.com)
@@ -12,11 +13,10 @@ runner:
     tag: "12"
     pullPolicy: "IfNotPresent"
   namePrefix: "k8s-runner"
-  # Labels that this runner registers with Forgejo Actions
+  # Labels registered with Forgejo Actions (e.g. ubuntu-latest, arm64, etc.)
   labels:
-    - "arm64:docker://node:20-bookworm"
-    - "linux-arm64:docker://node:20-bookworm"
-    - "self-hosted-arm64:docker://node:20-bookworm"
+    - "ubuntu-latest:docker://node:20-bookworm"
+    - "docker:docker://node:20-bookworm"
   capacity: 1
   timeout: "3h"
   insecure: false
@@ -34,7 +34,7 @@ dind:
     tag: "28-dind"
     pullPolicy: "IfNotPresent"
   privileged: true
-  # Optional in-cluster pull-through registry cache mirror
+  # Optional in-cluster pull-through registry cache mirror (e.g. http://registry-cache.default.svc:5000)
   registryMirror: ""
   resources:
     requests:
@@ -52,7 +52,7 @@ autoscaling:
   maxReplicas: 4
   pollingInterval: 10
   cooldownPeriod: 300
-  triggerLabels: "arm64"
+  triggerLabels: "ubuntu-latest"
   # Clean up completed jobs after 60 seconds
   ttlSecondsAfterFinished: 60
   successfulJobsHistoryLimit: 2
@@ -73,9 +73,11 @@ secrets:
   # Hardcoded token if not using existingSecret or externalSecrets
   token: ""
 
-# Node scheduling & anti-affinity
-nodeSelector:
-  kubernetes.io/arch: "arm64"
+# Node scheduling (unconstrained by default, runs on any architecture)
+# Example to pin to ARM64:
+#   nodeSelector:
+#     kubernetes.io/arch: "arm64"
+nodeSelector: {}
 
 affinity:
   podAntiAffinity:
