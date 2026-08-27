@@ -48,11 +48,14 @@ spec:
             securityContext:
               privileged: {{ .Values.dind.privileged }}
             command:
-              - dockerd
-              - --host=unix:///var/run/docker.sock
-              {{- if .Values.dind.registryMirror }}
-              - --registry-mirror={{ .Values.dind.registryMirror }}
-              {{- end }}
+              - sh
+              - -c
+              - |
+                dockerd --host=unix:///var/run/docker.sock{{- if .Values.dind.registryMirror }} --registry-mirror={{ .Values.dind.registryMirror }}{{- end }} &
+                DOCKER_PID=$!
+                while [ ! -S /var/run/docker.sock ]; do sleep 0.5; done
+                chmod 666 /var/run/docker.sock
+                wait $DOCKER_PID
             startupProbe:
               exec:
                 command: ["/usr/bin/test", "-S", "/var/run/docker.sock"]
@@ -66,6 +69,8 @@ spec:
                 mountPath: /var/run
         containers:
           - name: runner
+            securityContext:
+              runAsUser: 0
             image: "{{ .Values.runner.image.repository }}:{{ .Values.runner.image.tag }}"
             imagePullPolicy: {{ .Values.runner.image.pullPolicy }}
             command: ["/etc/forgejo-runner/entrypoint.sh"]
