@@ -10,7 +10,7 @@ data:
       level: info
       job_level: info
     runner:
-      file: .runner
+      file: /data/.runner
       capacity: {{ .Values.runner.capacity }}
       timeout: {{ .Values.runner.timeout }}
       insecure: {{ .Values.runner.insecure }}
@@ -52,6 +52,7 @@ data:
     echo "[forgejo-runner-init] Docker socket is ready."
 
     mkdir -p /data
+    cd /data
     cp /etc/forgejo-runner/config.yaml /data/config.yaml
 
     # Extract clean short suffix (e.g. "5nz2d" or "4cr5v-5nz2d" from full pod hostname)
