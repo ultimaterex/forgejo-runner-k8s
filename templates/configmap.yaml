@@ -51,9 +51,9 @@ data:
     done
     echo "[forgejo-runner-init] Docker socket is ready."
 
-    cp /etc/forgejo-runner/config.yaml /data/config.yaml
-
-    RUNNER_NAME="{{ .Values.runner.namePrefix }}-${HOSTNAME}"
+    # Extract clean short suffix (e.g. "5nz2d" or "4cr5v-5nz2d" from full pod hostname)
+    SHORT_ID="$(echo "${HOSTNAME}" | awk -F'-' '{if (NF>=2) print $(NF-1)"-"$NF; else print $0}')"
+    RUNNER_NAME="{{ .Values.runner.namePrefix }}-${SHORT_ID}"
     LABELS_ARG="{{ join "," .Values.runner.labels }}"
 
     echo "[forgejo-runner-init] Registering ephemeral runner $RUNNER_NAME with {{ .Values.forgejo.url }}..."
