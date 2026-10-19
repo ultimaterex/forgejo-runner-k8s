@@ -155,6 +155,7 @@ You can switch between two scaling modes via `autoscaling.mode`:
 | `runner.capacity` | Max concurrent jobs per runner pod | `1` |
 | `dind.image.tag` | Docker-in-Docker image tag | `28-dind` |
 | `dind.privileged` | Enable privileged mode for DinD | `true` |
+| `dind.mtu` | Docker daemon and bridge network MTU (1400 recommended for CNI overlays) | `1400` |
 | `dind.registryMirror` | Optional pull-through registry cache mirror | `""` |
 | `autoscaling.mode` | Scaling mode (`ScaledJob` or `ScaledObject`) | `ScaledJob` |
 | `autoscaling.minReplicas` | Minimum replica count | `0` |
