@@ -20,6 +20,8 @@ runner:
   capacity: 1
   timeout: "3h"
   insecure: false
+  # Network mode for job containers: "host" (recommended for DinD so containers and runner share localhost network) or "bridge"
+  containerNetwork: "host"
   resources:
     requests:
       cpu: "250m"

@@ -26,7 +26,7 @@ data:
       dir: ""
       host: ""
     container:
-      network: ""
+      network: {{ .Values.runner.containerNetwork | default "host" | quote }}
       privileged: true
       workdir_parent:
       valid_volumes:
