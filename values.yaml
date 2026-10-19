@@ -34,6 +34,8 @@ dind:
     tag: "28-dind"
     pullPolicy: "IfNotPresent"
   privileged: true
+  # MTU for Docker daemon and bridge networks (1400 recommended for Kubernetes CNI / Flannel VXLAN overlays)
+  mtu: 1400
   # Optional in-cluster pull-through registry cache mirror (e.g. http://registry-cache.default.svc:5000)
   registryMirror: ""
   resources:

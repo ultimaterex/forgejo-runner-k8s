@@ -51,7 +51,8 @@ spec:
               - sh
               - -c
               - |
-                dockerd --host=unix:///var/run/docker.sock{{- if .Values.dind.registryMirror }} --registry-mirror={{ .Values.dind.registryMirror }}{{- end }} &
+                iptables -t mangle -A POSTROUTING -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || true
+                dockerd --host=unix:///var/run/docker.sock{{- if .Values.dind.mtu }} --mtu={{ .Values.dind.mtu }}{{- end }}{{- if .Values.dind.registryMirror }} --registry-mirror={{ .Values.dind.registryMirror }}{{- end }} &
                 DOCKER_PID=$!
                 while [ ! -S /var/run/docker.sock ]; do sleep 0.5; done
                 chmod 666 /var/run/docker.sock
